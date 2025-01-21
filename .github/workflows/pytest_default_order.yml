@@ -1,15 +1,12 @@
 name: pytest_default_order
 
 on:
-  schedule:
-    # Checks out main by default.
-    - cron: '0 0 * * *'
   pull_request:
     branches:
       - main
-  merge_group:
-    types:
-      - checks_requested
+  push:
+    branches:
+      - main
 
 concurrency:
   group: ${{ github.head_ref || github.run_id }}
