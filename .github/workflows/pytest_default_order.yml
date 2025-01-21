@@ -1,0 +1,63 @@
+name: pytest_default_order
+
+on:
+  schedule:
+    # Checks out main by default.
+    - cron: '0 0 * * *'
+  pull_request:
+    branches:
+      - main
+  merge_group:
+    types:
+      - checks_requested
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: Pytest Ubuntu
+    strategy:
+      matrix:
+        python-version: ['3.12'] #['3.10', '3.11', '3.12']
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Check out source repository
+        uses: actions/checkout@v4
+      - name: Set up Python environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: 'x64'
+      - name: Set up caching of dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.pythonLocation }}
+          key: ${{ env.pythonLocation }}-${{ hashFiles('**/requirements.txt', 'dev_tools/requirements/**/*.txt') }}
+      - name: Install requirements
+        run: |
+          pip install wheel
+          pip install --upgrade --upgrade-strategy eager -r dev_tools/requirements/dev.env.txt
+      - name: Install pytest-ranking related
+        run: pip install pytest-ranking pytest-json-report
+      - name: Run Quil dependencies
+        run: docker compose -f cirq-rigetti/docker-compose.test.yaml up -d
+      - name: Restore pytest-ranking cache
+        id: restore-pytest-ranking-cache
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ github.workspace }}/.pytest_cache/v/pytest_ranking_data
+          key: pytest-ranking-cache-${{ github.workflow }}-${{ runner.os }}-${{ matrix.python }}
+      - name: Pytest check
+        run: check/pytest -p no:randomly -n auto -v --durations=0 --json-report --json-report-file=./test-report.json --ignore=cirq-core/cirq/contrib --rigetti-integration
+      - name: Save pytest-ranking cache
+        id: save-pytest-ranking-cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ github.workspace }}/.pytest_cache/v/pytest_ranking_data
+          key: pytest-ranking-cache-${{ github.workflow }}-${{ runner.os }}-${{ matrix.python }}-${{ github.run_id }}
+      - name: Stop Quil dependencies
+        run: docker compose -f cirq-rigetti/docker-compose.test.yaml down
